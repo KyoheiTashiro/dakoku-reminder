@@ -181,18 +181,19 @@ function isOutOfActiveHours(now) {
 
   const timeSlot = getTimeSlot(now);
 
-  return isWeekend || timeSlot === null;
+  return isWeekend || !timeSlot;
 }
 
 /**
  * 当日・当該時間帯の停止フラグが立っているかを判定。
- * 稼働時間帯(getTimeSlot が non-null を返す)の呼出を前提とする。
  *
  * @param {Date} now - 判定対象の日時
  * @returns {boolean} フラグが立っている場合、trueを返却
  */
 function hasStoppedFlag(now) {
   const timeSlot = getTimeSlot(now);
+   if (!timeSlot) return false;
+
   const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
   const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
 
@@ -207,6 +208,7 @@ function hasStoppedFlag(now) {
  */
 function tick() {
   const now = new Date();
+
   if (isOutOfActiveHours(now) || hasStoppedFlag(now)) return;
 
   const timeSlot = getTimeSlot(now);
@@ -214,12 +216,14 @@ function tick() {
   if (hasReactionOnRecent(timeSlot)) {
     const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
     PROPS.setProperty(`${FLAG_PREFIX}${dateString}_${timeSlot}`, '1');
+    
     return;
   }
 
   const text = timeSlot === TIME_SLOT.MORNING
       ? '始業打刻したら✅を押してね！'
       : '終業打刻したら✅を押してね！';
+
   postMessage(text);
 }
 
@@ -238,6 +242,7 @@ function postMessage(text) {
     payload: JSON.stringify({ channel: CHANNEL, text }),
     muteHttpExceptions: true,
   });
+  
   const body = JSON.parse(res.getContentText());
 
   if (!body.ok) console.error('post failed', body);
@@ -268,9 +273,9 @@ function hasReactionOnRecent(timeSlot) {
     return false;
   }
 
-  return body.messages.some((message) =>
-    message.reactions?.some((reaction) => reaction.name === STOP_EMOJI)
-  );
+  return body.messages
+    .flatMap((message) => message.reactions ?? [])
+    .some((reaction) => reaction.name === STOP_EMOJI);
 }
 
 /**
