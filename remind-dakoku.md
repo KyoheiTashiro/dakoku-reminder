@@ -217,10 +217,10 @@ function tick() {
     return;
   }
 
-  const message = timeSlot === TIME_SLOT.MORNING
+  const text = timeSlot === TIME_SLOT.MORNING
       ? '始業打刻したら✅を押してね！'
       : '終業打刻したら✅を押してね！';
-  postMessage(message);
+  postMessage(text);
 }
 
 /**
@@ -230,12 +230,12 @@ function tick() {
  * @param {string} text - 投稿本文
  * @returns {void}
  */
-function postMessage(message) {
+function postMessage(text) {
   const res = UrlFetchApp.fetch('https://slack.com/api/chat.postMessage', {
     method: 'post',
     headers: { Authorization: `Bearer ${TOKEN}` },
     contentType: 'application/json; charset=utf-8',
-    payload: JSON.stringify({ channel: CHANNEL, message }),
+    payload: JSON.stringify({ channel: CHANNEL, text }),
     muteHttpExceptions: true,
   });
   const body = JSON.parse(res.getContentText());
