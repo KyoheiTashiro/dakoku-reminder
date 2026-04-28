@@ -215,8 +215,9 @@ function tick() {
 
   if (hasReactionOnRecent(timeSlot)) {
     const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
-    PROPS.setProperty(`${FLAG_PREFIX}${dateString}_${timeSlot}`, '1');
-    
+    const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
+
+    PROPS.setProperty(flagKey, '1');
     return;
   }
 
