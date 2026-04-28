@@ -149,58 +149,6 @@ const ACTIVE_HOURS = {
 const FLAG_PREFIX = 'stopped_';
 
 /**
- * 日時から該当する時間帯名を返却する。
- *
- * @param {Date} now - 判定対象の日時
- * @returns {'morning'|'evening'|null} 該当する時間帯名 or 範囲外の場合はnull
- */
-function getTimeSlot(now) {
-  const hours = now.getHours();
-  const morning = ACTIVE_HOURS[TIME_SLOT.MORNING];
-  const evening = ACTIVE_HOURS[TIME_SLOT.EVENING];
-
-  switch (true) {
-    case hours >= morning.startHour && hours < morning.endHour:
-      return TIME_SLOT.MORNING;
-    case hours >= evening.startHour && hours < evening.endHour:
-      return TIME_SLOT.EVENING;
-    default:
-      return null;
-  }
-}
-
-/**
- * 打刻対象外の時間帯であることを判定。
- *
- * @param {Date} now - 判定対象の日時
- * @returns {boolean} 打刻対象外である場合、trueを返却
- */
-function isOutOfActiveHours(now) {
-  const day = now.getDay();
-  const isWeekend = day === 0 || day === 6;
-
-  const timeSlot = getTimeSlot(now);
-
-  return isWeekend || !timeSlot;
-}
-
-/**
- * 当日・当該時間帯の停止フラグが立っているかを判定。
- *
- * @param {Date} now - 判定対象の日時
- * @returns {boolean} フラグが立っている場合、trueを返却
- */
-function hasStoppedFlag(now) {
-  const timeSlot = getTimeSlot(now);
-   if (!timeSlot) return false;
-
-  const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
-  const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
-
-  return Boolean(PROPS.getProperty(flagKey));
-}
-
-/**
  * トリガーから5分おきに実行されるメインロジック。
  * 平日かつ打刻対象の時間帯で、当日の当該時間帯が未打刻と判定される場合、リマインドを投稿する。
  *
@@ -224,6 +172,104 @@ function tick() {
   const message = buildMessage(timeSlot);
 
   postMessage(message);
+}
+
+/**
+ * Script Properties から本日より古い `stopped_YYYYMMDD_*` キーを一括削除する。
+ * トリガーから1週間おきなどで定期的に実行される想定。
+ *
+ * @returns {void}
+ */
+function cleanupFlags() {
+  const properties = PROPS.getProperties();
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+
+  Object.keys(properties)
+    .filter((property) => property.startsWith(FLAG_PREFIX))
+    .filter((property) => property.split('_')[1] < today)
+    .forEach((property) => PROPS.deleteProperty(property));
+}
+
+/**
+ * 打刻対象外の時間帯であることを判定。
+ *
+ * @param {Date} now - 判定対象の日時
+ * @returns {boolean} 打刻対象外である場合、trueを返却
+ */
+function isOutOfActiveHours(now) {
+  const day = now.getDay();
+  const isWeekend = day === 0 || day === 6;
+
+  const timeSlot = getTimeSlot(now);
+
+  return isWeekend || !timeSlot;
+}
+
+/**
+ * 日時から該当する時間帯名を返却する。
+ *
+ * @param {Date} now - 判定対象の日時
+ * @returns {'morning'|'evening'|null} 該当する時間帯名 or 範囲外の場合はnull
+ */
+function getTimeSlot(now) {
+  const hours = now.getHours();
+  const morning = ACTIVE_HOURS[TIME_SLOT.MORNING];
+  const evening = ACTIVE_HOURS[TIME_SLOT.EVENING];
+
+  switch (true) {
+    case hours >= morning.startHour && hours < morning.endHour:
+      return TIME_SLOT.MORNING;
+    case hours >= evening.startHour && hours < evening.endHour:
+      return TIME_SLOT.EVENING;
+    default:
+      return null;
+  }
+}
+
+/**
+ * 当日・当該時間帯の停止フラグが立っているかを判定。
+ *
+ * @param {Date} now - 判定対象の日時
+ * @returns {boolean} フラグが立っている場合、trueを返却
+ */
+function hasStoppedFlag(now) {
+  const timeSlot = getTimeSlot(now);
+   if (!timeSlot) return false;
+
+  const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
+  const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
+
+  return Boolean(PROPS.getProperty(flagKey));
+}
+
+/**
+ * 当該時間帯の開始以降のチャンネル履歴を取得し、STOP_EMOJI リアクションの有無を判定する。
+ * API失敗時はfalseを返し投稿継続させる。
+ *
+ * @param {'morning'|'evening'} timeSlot - 検査対象の時間帯
+ * @returns {boolean} 対象の投稿のリアクションに STOP_EMOJI が含まれる場合、trueを返却
+ */
+function hasReactionOnRecent(timeSlot) {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(ACTIVE_HOURS[timeSlot].startHour, 0, 0, 0);
+  const oldest = Math.floor(start.getTime() / 1000);
+
+  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=50`;
+  const res = UrlFetchApp.fetch(url, {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    muteHttpExceptions: true,
+  });
+  const body = JSON.parse(res.getContentText());
+
+  if (!body.ok) {
+    console.error('failed to fetch history: ', body);
+    return false;
+  }
+
+  return body.messages
+    .flatMap((message) => message.reactions ?? [])
+    .some((reaction) => reaction.name === STOP_EMOJI);
 }
 
 /**
@@ -259,52 +305,6 @@ function postMessage(text) {
   const body = JSON.parse(res.getContentText());
 
   if (!body.ok) console.error('post failed', body);
-}
-
-/**
- * 当該時間帯の開始以降のチャンネル履歴を取得し、STOP_EMOJI リアクションの有無を判定する。
- * API失敗時はfalseを返し投稿継続させる。
- *
- * @param {'morning'|'evening'} timeSlot - 検査対象の時間帯
- * @returns {boolean} 対象の投稿のリアクションに STOP_EMOJI が含まれる場合、trueを返却
- */
-function hasReactionOnRecent(timeSlot) {
-  const now = new Date();
-  const start = new Date(now);
-  start.setHours(ACTIVE_HOURS[timeSlot].startHour, 0, 0, 0);
-  const oldest = Math.floor(start.getTime() / 1000);
-
-  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=50`;
-  const res = UrlFetchApp.fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    muteHttpExceptions: true,
-  });
-  const body = JSON.parse(res.getContentText());
-
-  if (!body.ok) {
-    console.error('failed to fetch history: ', body);
-    return false;
-  }
-
-  return body.messages
-    .flatMap((message) => message.reactions ?? [])
-    .some((reaction) => reaction.name === STOP_EMOJI);
-}
-
-/**
- * Script Properties から本日より古い `stopped_YYYYMMDD_*` キーを一括削除する。
- * トリガーから1週間おきなどで定期的に実行される想定。
- *
- * @returns {void}
- */
-function cleanupFlags() {
-  const properties = PROPS.getProperties();
-  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
-
-  Object.keys(properties)
-    .filter((property) => property.startsWith(FLAG_PREFIX))
-    .filter((property) => property.split('_')[1] < today)
-    .forEach((property) => PROPS.deleteProperty(property));
 }
 ```
 
