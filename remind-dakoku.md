@@ -222,8 +222,8 @@ function tick() {
   }
 
   const text = timeSlot === TIME_SLOT.MORNING
-      ? '始業打刻したら✅を押してね！'
-      : '終業打刻したら✅を押してね！';
+      ? '【始業】打刻したことを確認したら、✅を押してね！'
+      : '【終業】打刻したことを確認したら、✅を押してね！';
 
   postMessage(text);
 }
