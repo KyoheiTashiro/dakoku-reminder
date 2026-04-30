@@ -175,22 +175,6 @@ function tick() {
 }
 
 /**
- * Script Properties から本日より古い `stopped_YYYYMMDD_*` キーを一括削除する。
- * トリガーから1週間おきなどで定期的に実行される想定。
- *
- * @returns {void}
- */
-function cleanupFlags() {
-  const properties = PROPS.getProperties();
-  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
-
-  Object.keys(properties)
-    .filter((property) => property.startsWith(FLAG_PREFIX))
-    .filter((property) => property.split('_')[1] < today)
-    .forEach((property) => PROPS.deleteProperty(property));
-}
-
-/**
  * 打刻対象外の時間帯であることを判定。
  *
  * @param {Date} date - 判定対象の日時
@@ -198,9 +182,9 @@ function cleanupFlags() {
  */
 function isOutOfActiveHours(date) {
   const day = date.getDay();
+
   const isWeekend = day === 0 || day === 6;
   const isHoliday = isNationalHoliday(date);
-
   const timeSlot = getTimeSlot(date);
 
   return isWeekend || isHoliday || !timeSlot;
@@ -336,6 +320,22 @@ function postMessage(text) {
 
   if (!body.ok) console.error('post failed', body);
 }
+
+/**
+ * Script Properties から本日より古い `stopped_YYYYMMDD_*` キーを一括削除する。
+ * トリガーから1週間おきなどで定期的に実行される想定。
+ *
+ * @returns {void}
+ */
+function cleanupFlags() {
+  const properties = PROPS.getProperties();
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+
+  Object.keys(properties)
+    .filter((property) => property.startsWith(FLAG_PREFIX))
+    .filter((property) => property.split('_')[1] < today)
+    .forEach((property) => PROPS.deleteProperty(property));
+}
 ```
 
 ### 2-5. 保存
@@ -373,7 +373,7 @@ function testPost() { postMessage('テスト投稿'); }
 
 ### 4-2. `tick`単体実行
 
-時間帯外でも動作確認したい場合、一時的に ` if (isOutOfActiveTimeZones(now)) return;` コメントアウト → 実行 → 復元
+時間帯外でも動作確認したい場合、一時的に `  if (isOutOfActiveHours(now) || hasStoppedFlag(now)) return;` コメントアウト → 実行 → 復元
 
 ### 4-3. スタンプ停止テスト
 
@@ -388,7 +388,19 @@ function testPost() { postMessage('テスト投稿'); }
 | 平日 10:00-10:55（5分刻み） | `morning`投稿、スタンプ検知で以降停止 |
 | 平日 20:00-20:55（5分刻み） | `evening`投稿、`morning`停止と独立 |
 | 土日 | 全スキップ |
+| 祝日 | 全スキップ |
 | 日付変わる | フラグキー変わる → 翌日自動再開 |
+
+**時間帯のカスタマイズ**
+
+朝枠・夜枠の稼働時間は、コード冒頭の `ACTIVE_HOURS` を書き換えて任意に設定可。`startHour`（開始時、含む）と `endHour`（終了時、含まず）を変更し、`tick` トリガーの稼働時間と整合させればよい。
+
+```javascript
+const ACTIVE_HOURS = {
+  [TIME_SLOT.MORNING]: { startHour: 9, endHour: 10 },   // 朝の枠を9-10時に
+  [TIME_SLOT.EVENING]: { startHour: 18, endHour: 19 },  // 夜の枠を18-19時に
+};
+```
 
 ## 注意点
 
