@@ -193,15 +193,15 @@ function cleanupFlags() {
 /**
  * 打刻対象外の時間帯であることを判定。
  *
- * @param {Date} now - 判定対象の日時
+ * @param {Date} date - 判定対象の日時
  * @returns {boolean} 打刻対象外である場合、trueを返却
  */
-function isOutOfActiveHours(now) {
-  const day = now.getDay();
+function isOutOfActiveHours(date) {
+  const day = date.getDay();
   const isWeekend = day === 0 || day === 6;
-  const isHoliday = isNationalHoliday(now);
+  const isHoliday = isNationalHoliday(date);
 
-  const timeSlot = getTimeSlot(now);
+  const timeSlot = getTimeSlot(date);
 
   return isWeekend || isHoliday || !timeSlot;
 }
@@ -238,11 +238,11 @@ function isNationalHoliday(date) {
 /**
  * 日時から該当する時間帯名を返却する。
  *
- * @param {Date} now - 判定対象の日時
+ * @param {Date} date - 判定対象の日時
  * @returns {'morning'|'evening'|null} 該当する時間帯名 or 範囲外の場合はnull
  */
-function getTimeSlot(now) {
-  const hours = now.getHours();
+function getTimeSlot(date) {
+  const hours = date.getHours();
   const morning = ACTIVE_HOURS[TIME_SLOT.MORNING];
   const evening = ACTIVE_HOURS[TIME_SLOT.EVENING];
 
@@ -259,14 +259,14 @@ function getTimeSlot(now) {
 /**
  * 当日・当該時間帯の停止フラグが立っているかを判定。
  *
- * @param {Date} now - 判定対象の日時
+ * @param {Date} date - 判定対象の日時
  * @returns {boolean} フラグが立っている場合、trueを返却
  */
-function hasStoppedFlag(now) {
-  const timeSlot = getTimeSlot(now);
+function hasStoppedFlag(date) {
+  const timeSlot = getTimeSlot(date);
    if (!timeSlot) return false;
 
-  const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
+  const dateString = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyyMMdd');
   const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
 
   return Boolean(PROPS.getProperty(flagKey));
