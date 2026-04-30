@@ -199,10 +199,40 @@ function cleanupFlags() {
 function isOutOfActiveHours(now) {
   const day = now.getDay();
   const isWeekend = day === 0 || day === 6;
+  const isHoliday = isNationalHoliday(now);
 
   const timeSlot = getTimeSlot(now);
 
-  return isWeekend || !timeSlot;
+  return isWeekend || isHoliday || !timeSlot;
+}
+
+/**
+ * 日本の祝日であることを判定。
+ * 判定結果は CacheService に 6時間（21600秒、GAS上限）保持し、同一日付内のAPI再呼出を抑止。
+ * 失敗時はfalseを返却。
+ *
+ * @param {Date} date - 判定対象の日付
+ * @returns {boolean} 祝日の場合、trueを返却
+ */
+function isNationalHoliday(date) {
+  const cache = CacheService.getScriptCache();
+  const key = `holiday_${Utilities.formatDate(date, 'Asia/Tokyo', 'yyyyMMdd')}`;
+  const cached = cache.get(key);
+  
+  if (cached !== null) {
+    return cached === '1'
+  };
+
+  try {
+    const calendar = CalendarApp.getCalendarById('ja.japanese#holiday@group.v.calendar.google.com');
+    const isHoliday = calendar.getEventsForDay(date).length > 0;
+    
+    cache.put(key, isHoliday ? '1' : '0', 21600);
+    return isHoliday;
+  } catch (e) {
+    console.error('failed to verify national holiday: ', e);
+    return false;
+  }
 }
 
 /**
