@@ -26,7 +26,8 @@
 1. **稼働日時判定** (`isOutOfActiveHours`): 土日・日本の祝日・稼働時間外（10時台/20時台以外）のいずれかなら終了。
 2. **停止フラグ確認** (`hasStoppedFlag`): 当日・当該時間帯のフラグがすでに立っていれば終了。
 3. **スタンプ検知** (`hasReactionOnRecent`): Slackから当該時間帯開始以降のチャンネル履歴を取得し、いずれかのメッセージに設定絵文字のリアクションが付いていないか確認。ついていれば「打刻済」とみなしフラグを立てて終了。
-4. **投稿** (`buildMessage` + `postMessage`): 上記すべてをすり抜けた場合のみリマインド文を投稿。
+4. **ユーザー自己申告検知** (`hasUserCompletionPost`): 当日0時以降のチャンネル履歴を取得し、ユーザー（bot以外）の投稿本文に `✅` 文字が含まれていれば「打刻済」とみなしフラグを立てて終了。ACTIVE_HOURS開始より早く打刻したユーザーが先回りで申告した場合の抑止用。
+5. **投稿** (`buildMessage` + `postMessage`): 上記すべてをすり抜けた場合のみリマインド文を投稿。
 
 **[3] Slack Workspace**
 
@@ -140,7 +141,7 @@ function tick() {
 
   const timeSlot = getTimeSlot(now);
 
-  if (hasReactionOnRecent(timeSlot)) {
+  if (hasReactionOnRecent(timeSlot) || hasUserCompletionPost(now)) {
     const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
     const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
 
@@ -266,6 +267,37 @@ function hasReactionOnRecent(timeSlot) {
 }
 
 /**
+ * 当日0時以降のチャンネル履歴を取得し、ユーザー（bot以外）の投稿本文に
+ * `✅` 文字が含まれていないかを判定する。
+ * ACTIVE_HOURS開始前にユーザーが先回りで打刻完了を申告した場合の抑止用。
+ * API失敗時はfalseを返し投稿継続させる。
+ *
+ * @param {Date} date - 判定基準日
+ * @returns {boolean} ✅含むユーザー投稿が当日に存在する場合、trueを返却
+ */
+function hasUserCompletionPost(date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const oldest = Math.floor(start.getTime() / 1000);
+
+  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=200`;
+  const res = UrlFetchApp.fetch(url, {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    muteHttpExceptions: true,
+  });
+  const body = JSON.parse(res.getContentText());
+
+  if (!body.ok) {
+    console.error('failed to fetch history: ', body);
+    return false;
+  }
+
+  return body.messages
+    .filter((message) => !message.bot_id && message.subtype !== 'bot_message')
+    .some((message) => (message.text ?? '').includes('✅'));
+}
+
+/**
  * 時間帯に応じたリマインド文を生成。1%の確率で"ワン！"を返却。
  *
  * @param {'morning'|'evening'} timeSlot - 対象の時間帯
@@ -365,6 +397,7 @@ function testPost() { postMessage('テスト投稿'); }
 | 土日 | 全スキップ |
 | 祝日 | 全スキップ |
 | 日付変わる | フラグキー変わる → 翌日自動再開 |
+| 当日0時以降のユーザー投稿に `✅` 文字 | 当該時間帯のリマインド抑止 → ACTIVE_HOURS開始前の先回り打刻に対応 |
 
 **時間帯のカスタマイズ**
 
