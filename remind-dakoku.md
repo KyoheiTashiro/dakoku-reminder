@@ -294,7 +294,7 @@ function hasUserCompletionPost(date) {
 
   return body.messages
     .filter((message) => !message.bot_id && message.subtype !== 'bot_message')
-    .some((message) => (message.text ?? '').includes('✅'));
+    .some((message) => (message.text ?? '').includes(STOP_EMOJI));
 }
 
 /**
