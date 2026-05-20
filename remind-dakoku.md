@@ -26,7 +26,7 @@
 1. **稼働日時判定** (`isOutOfActiveHours`): 土日・日本の祝日・稼働時間外（10時台/20時台以外）のいずれかなら終了。
 2. **停止フラグ確認** (`hasStoppedFlag`): 当日・当該時間帯のフラグがすでに立っていれば終了。
 3. **スタンプ検知** (`hasReactionOnRecent`): Slackから当該時間帯開始以降のチャンネル履歴を取得し、いずれかのメッセージに設定絵文字のリアクションが付いていないか確認。ついていれば「打刻済」とみなしフラグを立てて終了。
-4. **ユーザー自己申告検知** (`hasUserCompletionPost`): 当日0時以降のチャンネル履歴を取得し、ユーザー（bot以外）の投稿本文に `✅` 文字が含まれていれば「打刻済」とみなしフラグを立てて終了。ACTIVE_HOURS開始より早く打刻したユーザーが先回りで申告した場合の抑止用。
+4. **ユーザー自己申告検知** (`hasUserCompletionPost`): 当該時間帯のスキャン開始時刻（MORNING:当日0時 / EVENING:朝枠終了時刻）以降のチャンネル履歴を取得し、ユーザー（bot以外）の投稿本文に `✅` 文字が含まれていれば「打刻済」とみなしフラグを立てて終了。ACTIVE_HOURS開始より早く打刻したユーザーが先回りで申告した場合の抑止用。朝の申告は夜の枠まで抑止しない。
 5. **投稿** (`buildMessage` + `postMessage`): 上記すべてをすり抜けた場合のみリマインド文を投稿。
 
 **[3] Slack Workspace**
@@ -141,7 +141,7 @@ function tick() {
 
   const timeSlot = getTimeSlot(now);
 
-  if (hasReactionOnRecent(timeSlot) || hasUserCompletionPost(now)) {
+  if (hasReactionOnRecent(timeSlot) || hasUserCompletionPost(now, timeSlot)) {
     const dateString = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd');
     const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
 
@@ -267,17 +267,26 @@ function hasReactionOnRecent(timeSlot) {
 }
 
 /**
- * 当日0時以降のチャンネル履歴を取得し、ユーザー（bot以外）の投稿本文に
- * `✅` 文字が含まれていないかを判定する。
+ * 当該時間帯のスキャン開始時刻以降のチャンネル履歴を取得し、ユーザー（bot以外）の
+ * 投稿本文に `✅` 文字が含まれていないかを判定する。
  * ACTIVE_HOURS開始前にユーザーが先回りで打刻完了を申告した場合の抑止用。
+ * MORNINGは当日0時以降、EVENINGは朝枠終了時刻(MORNING.endHour)以降をスキャン対象とし、
+ * 朝の打刻申告が夜の枠まで抑止しないようにする。
  * API失敗時はfalseを返し投稿継続させる。
  *
  * @param {Date} date - 判定基準日
- * @returns {boolean} ✅含むユーザー投稿が当日に存在する場合、trueを返却
+ * @param {'morning'|'evening'} timeSlot - 検査対象の時間帯
+ * @returns {boolean} ✅含むユーザー投稿が範囲内に存在する場合、trueを返却
  */
-function hasUserCompletionPost(date) {
+function hasUserCompletionPost(date, timeSlot) {
   const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
+  
+  if (timeSlot === TIME_SLOT.EVENING) {
+    start.setHours(ACTIVE_HOURS[TIME_SLOT.MORNING].endHour, 0, 0, 0);
+  } else {
+    start.setHours(0, 0, 0, 0);
+  }
+  
   const oldest = Math.floor(start.getTime() / 1000);
 
   const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=200`;
