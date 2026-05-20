@@ -298,13 +298,13 @@ function hasUserCompletionPost(date) {
 }
 
 /**
- * 時間帯に応じたリマインド文を生成。1%の確率で"ワン！"を返却。
+ * 時間帯に応じたリマインド文を生成。0.1%の確率で"ワン！"を返却。
  *
  * @param {'morning'|'evening'} timeSlot - 対象の時間帯
  * @returns {string} 投稿本文
  */
 function buildMessage(timeSlot) {
-  if (Math.random() < 0.01) return 'ワン！';
+  if (Math.random() < 0.001) return 'ワン！';
 
   return timeSlot === TIME_SLOT.MORNING
     ? '【始業】打刻したことを確認したら、✅を押してね！'
