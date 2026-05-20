@@ -307,7 +307,7 @@ function hasUserCompletionPost(date, timeSlot) {
 }
 
 /**
- * 時間帯に応じたリマインド文を生成。0.1%の確率で"ワン！"を返却。
+ * 時間帯に応じたリマインド文を生成。
  *
  * @param {'morning'|'evening'} timeSlot - 対象の時間帯
  * @returns {string} 投稿本文
