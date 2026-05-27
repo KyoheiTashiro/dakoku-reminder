@@ -350,7 +350,8 @@ function isSnoozed(timeSlot) {
       if (!NUMBER_ONLY_PATTERN.test(text)) return false;
 
       const minutes = Number(text);
-      return Number(message.ts) + minutes * 60 > nowSec;
+      const snoozeExpiresAtSec = Number(message.ts) + minutes * 60;
+      return snoozeExpiresAtSec > nowSec;
     });
 }
 
