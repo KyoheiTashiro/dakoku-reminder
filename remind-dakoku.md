@@ -10,6 +10,7 @@
 
 - 平日（土日・日本の祝日を除く）10:00-11:00 / 20:00-21:00、5分おきに指定チャンネル自動投稿
 - 投稿に指定スタンプ押下 → その時間帯の当日分停止
+- 数字のみ投稿（例 `10`）→ 投稿時刻からN分リマインド一時停止（スヌーズ）
 - GAS + Slack API で実現
 
 ## システム構成
@@ -27,7 +28,8 @@
 2. **停止フラグ確認** (`hasStoppedFlag`): 当日・当該時間帯のフラグがすでに立っていれば終了。
 3. **スタンプ検知** (`hasReactionOnRecent`): Slackから当該時間帯開始以降のチャンネル履歴を取得し、いずれかのメッセージに設定絵文字のリアクションが付いていないか確認。ついていれば「打刻済」とみなしフラグを立てて終了。
 4. **ユーザー自己申告検知** (`hasUserCompletionPost`): 当該時間帯のスキャン開始時刻（MORNING:当日0時 / EVENING:朝枠終了時刻）以降のチャンネル履歴を取得し、ユーザー（bot以外）の投稿本文に `✅` 文字が含まれていれば「打刻済」とみなしフラグを立てて終了。ACTIVE_HOURS開始より早く打刻したユーザーが先回りで申告した場合の抑止用。朝の申告は夜の枠まで抑止しない。
-5. **投稿** (`buildMessage` + `postMessage`): 上記すべてをすり抜けた場合のみリマインド文を投稿。
+5. **スヌーズ判定** (`isSnoozed`): 当該時間帯開始以降のチャンネル履歴を取得し、ユーザー（bot以外）の数字のみ投稿（例 `10`）を探す。「投稿時刻 + N分」が現在時刻を超えていれば、まだスヌーズ期限内とみなして終了。完了申告と異なり**フラグは立てず**、期限が過ぎれば次のtickで自動再開する。
+6. **投稿** (`buildMessage` + `postMessage`): 上記すべてをすり抜けた場合のみリマインド文を投稿。
 
 **[3] Slack Workspace**
 
@@ -148,6 +150,8 @@ function tick() {
     PROPS.setProperty(flagKey, '1');
     return;
   }
+
+  if (isSnoozed(timeSlot)) return;
 
   const message = buildMessage(timeSlot);
 
@@ -307,6 +311,48 @@ function hasUserCompletionPost(date, timeSlot) {
 }
 
 /**
+ * 当該時間帯開始以降の履歴から、ユーザー（bot以外）の数字のみ投稿を探し、
+ * スヌーズ期限内のものが存在するかを判定する。
+ * 「投稿時刻 + N分」が現在時刻を超える間はスヌーズ中とみなす。
+ * 「まだ打刻していないが N分待ってほしい」用途。完了申告（✅）と異なりフラグは立てず、
+ * 期限が過ぎれば次のtickでリマインドが自動再開する。
+ * API失敗時はfalseを返し投稿継続させる。
+ *
+ * @param {'morning'|'evening'} timeSlot - 検査対象の時間帯
+ * @returns {boolean} スヌーズ期限内の数字投稿が存在する場合、trueを返却
+ */
+function isSnoozed(timeSlot) {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(ACTIVE_HOURS[timeSlot].startHour, 0, 0, 0);
+  const oldest = Math.floor(start.getTime() / 1000);
+
+  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=50`;
+  const res = UrlFetchApp.fetch(url, {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    muteHttpExceptions: true,
+  });
+  const body = JSON.parse(res.getContentText());
+
+  if (!body.ok) {
+    console.error('failed to fetch history: ', body);
+    return false;
+  }
+
+  const nowSec = now.getTime() / 1000;
+
+  return body.messages
+    .filter((message) => !message.bot_id && message.subtype !== 'bot_message')
+    .some((message) => {
+      // 数字以外の文字を含む場合
+      if (!/^\d+$/.test(message.text)) return false;
+
+      const minutes = Number(text);
+      return Number(message.ts) + minutes * 60 > nowSec;
+    });
+}
+
+/**
  * 時間帯に応じたリマインド文を生成。
  *
  * @param {'morning'|'evening'} timeSlot - 対象の時間帯
@@ -407,6 +453,7 @@ function testPost() { postMessage('テスト投稿'); }
 | 祝日 | 全スキップ |
 | 日付変わる | フラグキー変わる → 翌日自動再開 |
 | 当日0時以降のユーザー投稿に `✅` 文字 | 当該時間帯のリマインド抑止 → ACTIVE_HOURS開始前の先回り打刻に対応 |
+| ユーザーが数字のみ投稿（例 `10`） | 投稿時刻からN分当該時間帯のリマインドを一時停止（スヌーズ）。フラグ立てず期限切れで自動再開 |
 
 **時間帯のカスタマイズ**
 
@@ -428,6 +475,8 @@ const ACTIVE_HOURS = {
 - **タイムゾーン**: プロジェクト設定 `Asia/Tokyo` 必須、抜けると9時間ずれる
 - **祝日カレンダー依存**: Google 公開祝日カレンダー (`ja.japanese#holiday@group.v.calendar.google.com`) 参照。配信遅延・廃止リスクあり。実運用ではキャッシュ TTL 6時間 → 当日反映遅延の可能性
 - **祝日キャッシュ**: `CacheService` 6時間保持。手動で祝日判定変更したい場合 `CacheService.getScriptCache().remove('holiday_YYYYMMDD')` でキー削除
+- **スヌーズ対象**: 本文が数字のみ（`/^\d+$/`）の投稿のみ反応。雑談中の数字は誤検知しない。`0` 投稿は即再開で無害
+- **API呼出回数**: tick毎に最大3回 `conversations.history` を叩く（reaction/completion/snooze）。Tier 3 のため5分おきなら問題ないが、気になれば履歴取得を1回に統合し3判定で共有可
 
 ## トラブルシュート
 
