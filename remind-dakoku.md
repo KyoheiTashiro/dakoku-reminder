@@ -130,6 +130,8 @@ const ACTIVE_HOURS = {
 
 const FLAG_PREFIX = 'stopped_';
 
+const NUMBER_ONLY_PATTERN = /^\d+$/;
+
 /**
  * トリガーから5分おきに実行されるメインロジック。
  * 平日かつ打刻対象の時間帯で、当日の当該時間帯が未打刻と判定される場合、リマインドを投稿する。
@@ -344,8 +346,8 @@ function isSnoozed(timeSlot) {
   return body.messages
     .filter((message) => !message.bot_id && message.subtype !== 'bot_message')
     .some((message) => {
-      // 数字以外の文字を含む場合
-      if (!/^\d+$/.test(message.text)) return false;
+      const text = (message.text ?? '').trim();
+      if (!NUMBER_ONLY_PATTERN.test(text)) return false;
 
       const minutes = Number(text);
       return Number(message.ts) + minutes * 60 > nowSec;
