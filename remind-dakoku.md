@@ -18,13 +18,13 @@
 **[1] GAS 時間トリガー**
 
 - 実行間隔: 5分おき
-- 稼働時間帯: 平日 10-11時 / 20-21時（土日・祝日は内部判定でスキップ）
+- 稼働時間帯: 平日 10-11時 / 19-22時（土日・祝日は内部判定でスキップ）
 
 **[2] GAS: `tick()`** — メインロジック
 
 トリガー起動のたび、以下の順で判定し、条件を満たさないステップで即終了。
 
-1. **稼働日時判定** (`isOutOfActiveHours`): 土日・日本の祝日・稼働時間外（10時台/20時台以外）のいずれかなら終了。
+1. **稼働日時判定** (`isOutOfActiveHours`): 土日・日本の祝日・稼働時間外（10時台/19-21時台以外）のいずれかなら終了。
 2. **停止フラグ確認** (`hasStoppedFlag`): 当日・当該時間帯のフラグがすでに立っていれば終了。
 3. **終日停止検知** (`hasAllDayStopSignal`): 当日0時以降のチャンネル履歴を取得し、いずれかのメッセージに `DAYOFF_EMOJI`（部分一致、例 `heart`）を含むリアクションが付いていないか確認。ついていれば朝・夜 両時間帯のフラグを立てて終了し、当日終日リマインドを停止する。色違いのハート（`yellow_heart`等）も全捕捉。
 4. **スタンプ検知** (`hasReactionOnRecent`): Slackから当該時間帯開始以降のチャンネル履歴を取得し、いずれかのメッセージに設定絵文字のリアクションが付いていないか確認。ついていれば「打刻済」とみなしフラグを立てて終了。
@@ -128,7 +128,7 @@ const TIME_SLOT = {
 
 const ACTIVE_HOURS = {
   [TIME_SLOT.MORNING]: { startHour: 10, endHour: 11 },
-  [TIME_SLOT.EVENING]: { startHour: 20, endHour: 21 },
+  [TIME_SLOT.EVENING]: { startHour: 19, endHour: 22 },
 };
 
 const FLAG_PREFIX = 'stopped_';
@@ -194,7 +194,24 @@ function hasAllDayStopSignal(date) {
   start.setHours(0, 0, 0, 0);
   const oldest = Math.floor(start.getTime() / 1000);
 
-  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=200`;
+  const messages = fetchChannelHistory(oldest, 200);
+  if (!messages) return false;
+
+  return messages
+    .flatMap((message) => message.reactions ?? [])
+    .some((reaction) => reaction.name.includes(DAYOFF_EMOJI));
+}
+
+/**
+ * チャンネル履歴を取得しメッセージ配列を返却。
+ * API失敗時は null を返す（呼出側で投稿継続判定に利用）。
+ *
+ * @param {number} oldest - 取得開始のUNIX秒
+ * @param {number} limit - 取得件数上限
+ * @returns {Array|null} メッセージ配列 or 失敗時null
+ */
+function fetchChannelHistory(oldest, limit) {
+  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=${limit}`;
   const res = UrlFetchApp.fetch(url, {
     headers: { Authorization: `Bearer ${TOKEN}` },
     muteHttpExceptions: true,
@@ -203,12 +220,10 @@ function hasAllDayStopSignal(date) {
 
   if (!body.ok) {
     console.error('failed to fetch history: ', body);
-    return false;
+    return null;
   }
 
-  return body.messages
-    .flatMap((message) => message.reactions ?? [])
-    .some((reaction) => reaction.name.includes(DAYOFF_EMOJI));
+  return body.messages;
 }
 
 /**
@@ -306,19 +321,10 @@ function hasReactionOnRecent(timeSlot) {
   start.setHours(ACTIVE_HOURS[timeSlot].startHour, 0, 0, 0);
   const oldest = Math.floor(start.getTime() / 1000);
 
-  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=50`;
-  const res = UrlFetchApp.fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    muteHttpExceptions: true,
-  });
-  const body = JSON.parse(res.getContentText());
+  const messages = fetchChannelHistory(oldest, 50);
+  if (!messages) return false;
 
-  if (!body.ok) {
-    console.error('failed to fetch history: ', body);
-    return false;
-  }
-
-  return body.messages
+  return messages
     .flatMap((message) => message.reactions ?? [])
     .some((reaction) => reaction.name === STOP_EMOJI);
 }
@@ -346,19 +352,10 @@ function hasUserCompletionPost(date, timeSlot) {
   
   const oldest = Math.floor(start.getTime() / 1000);
 
-  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=200`;
-  const res = UrlFetchApp.fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    muteHttpExceptions: true,
-  });
-  const body = JSON.parse(res.getContentText());
+  const messages = fetchChannelHistory(oldest, 200);
+  if (!messages) return false;
 
-  if (!body.ok) {
-    console.error('failed to fetch history: ', body);
-    return false;
-  }
-
-  return body.messages
+  return messages
     .filter((message) => !message.bot_id && message.subtype !== 'bot_message')
     .some((message) => (message.text ?? '').includes(STOP_EMOJI));
 }
@@ -380,21 +377,12 @@ function isSnoozed(timeSlot) {
   start.setHours(ACTIVE_HOURS[timeSlot].startHour, 0, 0, 0);
   const oldest = Math.floor(start.getTime() / 1000);
 
-  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=50`;
-  const res = UrlFetchApp.fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    muteHttpExceptions: true,
-  });
-  const body = JSON.parse(res.getContentText());
-
-  if (!body.ok) {
-    console.error('failed to fetch history: ', body);
-    return false;
-  }
+  const messages = fetchChannelHistory(oldest, 50);
+  if (!messages) return false;
 
   const nowSec = now.getTime() / 1000;
 
-  return body.messages
+  return messages
     .filter((message) => !message.bot_id && message.subtype !== 'bot_message')
     .some((message) => {
       const text = (message.text ?? '').trim();
