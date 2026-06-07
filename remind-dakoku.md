@@ -26,7 +26,7 @@
 
 1. **稼働日時判定** (`isOutOfActiveHours`): 土日・日本の祝日・稼働時間外（10時台/19-21時台以外）のいずれかなら終了。
 2. **停止フラグ確認** (`hasStoppedFlag`): 当日・当該時間帯のフラグがすでに立っていれば終了。
-3. **終日停止検知** (`hasAllDayStopSignal`): 当日0時以降のチャンネル履歴を取得し、いずれかのメッセージに `DAYOFF_EMOJI`（部分一致、例 `heart`）を含むリアクションが付いていないか確認。ついていれば朝・夜 両時間帯のフラグを立てて終了し、当日終日リマインドを停止する。色違いのハート（`yellow_heart`等）も全捕捉。
+3. **終日停止検知** (`hasAllDayStopSignal`): 当日0時以降のチャンネル履歴を取得し、いずれかのメッセージに `DAY_OFF_EMOJI`（部分一致、例 `heart`）を含むリアクションが付いていないか確認。ついていれば朝・夜 両時間帯のフラグを立てて終了し、当日終日リマインドを停止する。色違いのハート（`yellow_heart`等）も全捕捉。
 4. **スタンプ検知** (`hasReactionOnRecent`): Slackから当該時間帯開始以降のチャンネル履歴を取得し、いずれかのメッセージに設定絵文字のリアクションが付いていないか確認。ついていれば「打刻済」とみなしフラグを立てて終了。
 5. **ユーザー自己申告検知** (`hasUserCompletionPost`): 当該時間帯のスキャン開始時刻（MORNING:当日0時 / EVENING:朝枠終了時刻）以降のチャンネル履歴を取得し、ユーザー（bot以外）の投稿本文に `✅` 文字が含まれていれば「打刻済」とみなしフラグを立てて終了。ACTIVE_HOURS開始より早く打刻したユーザーが先回りで申告した場合の抑止用。朝の申告は夜の枠まで抑止しない。
 6. **スヌーズ判定** (`isSnoozed`): 当該時間帯開始以降のチャンネル履歴を取得し、ユーザー（bot以外）の数字のみ投稿（例 `10`）を探す。「投稿時刻 + N分」が現在時刻を超えていれば、まだスヌーズ期限内とみなして終了。完了申告と異なり**フラグは立てず**、期限が過ぎれば次のtickで自動再開する。
@@ -108,7 +108,7 @@
 | `SLACK_TOKEN` | `xoxb-...` |
 | `CHANNEL_ID` | `CXXXXX` |
 | `STOP_EMOJI` | `white_check_mark` |
-| `DAYOFF_EMOJI` | `heart` |
+| `DAY_OFF_EMOJI` | `heart` |
 
 ### 2-4. コード貼付
 
@@ -119,7 +119,7 @@ const PROPS = PropertiesService.getScriptProperties();
 const TOKEN = PROPS.getProperty('SLACK_TOKEN');
 const CHANNEL = PROPS.getProperty('CHANNEL_ID');
 const STOP_EMOJI = PROPS.getProperty('STOP_EMOJI');
-const DAYOFF_EMOJI = PROPS.getProperty('DAYOFF_EMOJI');
+const DAY_OFF_EMOJI = PROPS.getProperty('DAY_OFF_EMOJI');
 
 const TIME_SLOT = {
   MORNING: 'morning',
@@ -182,7 +182,7 @@ function setStopFlag(date, timeSlot) {
 
 /**
  * 当日0時以降の履歴に終日停止シグナル（ハート系リアクション）が存在するかを判定する。
- * リアクション名に DAYOFF_EMOJI を含むものがあれば true。
+ * リアクション名に DAY_OFF_EMOJI を含むものがあれば true。
  * 検知時は朝・夜 両時間帯のフラグを立て、当日終日リマインドを停止させる用途。
  * API失敗時は false を返し投稿継続させる。
  *
@@ -199,7 +199,7 @@ function hasAllDayStopSignal(date) {
 
   return messages
     .flatMap((message) => message.reactions ?? [])
-    .some((reaction) => reaction.name.includes(DAYOFF_EMOJI));
+    .some((reaction) => reaction.name.includes(DAY_OFF_EMOJI));
 }
 
 /**
@@ -494,7 +494,7 @@ function testPost() { postMessage('テスト投稿'); }
 | 土日 | 全スキップ |
 | 祝日 | 全スキップ |
 | 日付変わる | フラグキー変わる → 翌日自動再開 |
-| 当日の投稿にハート系リアクション（`DAYOFF_EMOJI` 部分一致） | 朝・夜 両フラグを立て当日終日リマインド停止 |
+| 当日の投稿にハート系リアクション（`DAY_OFF_EMOJI` 部分一致） | 朝・夜 両フラグを立て当日終日リマインド停止 |
 | 当日0時以降のユーザー投稿に `✅` 文字 | 当該時間帯のリマインド抑止 → ACTIVE_HOURS開始前の先回り打刻に対応 |
 | ユーザーが数字のみ投稿（例 `10`） | 投稿時刻からN分当該時間帯のリマインドを一時停止（スヌーズ）。フラグ立てず期限切れで自動再開 |
 
