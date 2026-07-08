@@ -254,15 +254,16 @@ function isNationalHoliday(date) {
   const cache = CacheService.getScriptCache();
   const key = `holiday_${Utilities.formatDate(date, 'Asia/Tokyo', 'yyyyMMdd')}`;
   const cached = cache.get(key);
-  
+
   if (cached !== null) {
     return cached === '1'
   };
 
+
   try {
-    const calendar = CalendarApp.getCalendarById('ja.japanese#holiday@group.v.calendar.google.com');
+    const calendar = CalendarApp.getCalendarById('ja.japanese.official#holiday@group.v.calendar.google.com');
     const isHoliday = calendar.getEventsForDay(date).length > 0;
-    
+
     cache.put(key, isHoliday ? '1' : '0', 21600);
     return isHoliday;
   } catch (e) {
@@ -300,7 +301,7 @@ function getTimeSlot(date) {
  */
 function hasStoppedFlag(date) {
   const timeSlot = getTimeSlot(date);
-   if (!timeSlot) return false;
+  if (!timeSlot) return false;
 
   const dateString = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyyMMdd');
   const flagKey = `${FLAG_PREFIX}${dateString}_${timeSlot}`;
@@ -343,13 +344,13 @@ function hasReactionOnRecent(timeSlot) {
  */
 function hasUserCompletionPost(date, timeSlot) {
   const start = new Date(date);
-  
+
   if (timeSlot === TIME_SLOT.EVENING) {
     start.setHours(ACTIVE_HOURS[TIME_SLOT.MORNING].endHour, 0, 0, 0);
   } else {
     start.setHours(0, 0, 0, 0);
   }
-  
+
   const oldest = Math.floor(start.getTime() / 1000);
 
   const messages = fetchChannelHistory(oldest, 200);
@@ -423,7 +424,7 @@ function postMessage(text) {
     payload: JSON.stringify({ channel: CHANNEL, text }),
     muteHttpExceptions: true,
   });
-  
+
   const body = JSON.parse(res.getContentText());
 
   if (!body.ok) console.error('post failed', body);
@@ -516,7 +517,7 @@ const ACTIVE_HOURS = {
 - **プライベートチャンネル**: `groups:history` スコープ追加 + Bot再インストール必要
 - **`limit=50`**: 該当時間帯に50件超投稿ある場合ページング必要（通常用途では不要）
 - **タイムゾーン**: プロジェクト設定 `Asia/Tokyo` 必須、抜けると9時間ずれる
-- **祝日カレンダー依存**: Google 公開祝日カレンダー (`ja.japanese#holiday@group.v.calendar.google.com`) 参照。配信遅延・廃止リスクあり。実運用ではキャッシュ TTL 6時間 → 当日反映遅延の可能性
+- **祝日カレンダー依存**: Google 公開祝日カレンダー (`ja.japanese.official#holiday@group.v.calendar.google.com`、法定祝日のみ版) 参照。`ja.japanese#holiday@...`（`.official` なし）は「祝日およびその他の休日」版で、七夕・クリスマス・大晦日等の行事も含むため使用しない。配信遅延・廃止リスクあり。実運用ではキャッシュ TTL 6時間 → 当日反映遅延の可能性
 - **祝日キャッシュ**: `CacheService` 6時間保持。手動で祝日判定変更したい場合 `CacheService.getScriptCache().remove('holiday_YYYYMMDD')` でキー削除
 - **スヌーズ対象**: 本文が数字のみ（`/^\d+$/`）の投稿のみ反応。雑談中の数字は誤検知しない。`0` 投稿は即再開で無害
 - **API呼出回数**: tick毎に最大3回 `conversations.history` を叩く（reaction/completion/snooze）。Tier 3 のため5分おきなら問題ないが、気になれば履歴取得を1回に統合し3判定で共有可
