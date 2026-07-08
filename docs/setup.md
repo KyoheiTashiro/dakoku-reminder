@@ -1,6 +1,6 @@
 # 打刻リマインド（remind-dakoku）構築手順
 
-概要・使い方は [README.md](README.md)、仕組み・設計の解説は [docs/architecture.md](docs/architecture.md) を参照。
+概要・使い方は [README.md](../README.md)、仕組み・設計の解説は [docs/architecture.md](architecture.md) を参照。
 
 ## 1. Slack App作成
 
@@ -55,7 +55,7 @@
 
 ### 2-4. コード貼付
 
-[src/code.gs](src/code.gs) の内容を `コード.gs` に貼付。
+[src/code.gs](../src/code.gs) の内容を `コード.gs` に貼付。
 
 ## 3. トリガー設定
 
@@ -90,7 +90,7 @@
 - **タイムゾーン**: プロジェクト設定 `Asia/Tokyo` 必須（手順 2-2）、抜けると9時間ずれる
 - **プライベートチャンネル**: `groups:history` / `groups:read` は manifest に含まれるためスコープ追加不要。Bot のチャンネル招待のみ必要
 
-動作仕様に関する注意点（5分刻み精度・レート制限・祝日カレンダー・スヌーズ仕様等）は [docs/architecture.md](docs/architecture.md) の「設計上の注意点」を参照。
+動作仕様に関する注意点（5分刻み精度・レート制限・祝日カレンダー・スヌーズ仕様等）は [docs/architecture.md](architecture.md) の「設計上の注意点」を参照。
 
 ## トラブルシュート
 

@@ -13,8 +13,6 @@
 - 数字のみ投稿（例 `10`）→ 投稿時刻からN分リマインド一時停止（スヌーズ）
 - GAS + Slack API で実現
 
-構築手順は [SETUP.md](SETUP.md)、システム構成・設計は [docs/architecture.md](docs/architecture.md)、コード本体は [src/code.gs](src/code.gs) を参照。
-
 ## 使い方
 
 Bot が投稿するリマインドに対して、チャンネル上の操作だけで制御できる。
@@ -28,46 +26,10 @@ Bot が投稿するリマインドに対して、チャンネル上の操作だ�
 
 ![](docs/screenshot.png)
 
+## ドキュメント
 
-## 挙動仕様
-
-| 時刻 | 動作 |
-|------|------|
-| 平日 朝の時間帯（例 10:00-10:55、5分刻み） | `morning`投稿、リアクション検知で以降停止 |
-| 平日 夜の時間帯（例 19:00-21:55、5分刻み） | `evening`投稿、`morning`停止と独立 |
-| 土日 | 全スキップ |
-| 祝日 | 全スキップ |
-| 日付変わる | フラグキー変わる → 翌日自動再開 |
-| 当日の投稿に ✅ リアクション | 当該時間帯のフラグを立て当日分リマインド停止 |
-| 当日の投稿、またはユーザー投稿に ❤️ 文字 | 朝・夜 両フラグを立て当日終日リマインド停止 |
-| 当日0時以降のユーザー投稿に ✅ 文字 | 当該時間帯のリマインド停止 → ACTIVE_HOURS開始前の先回り打刻に対応 |
-| ユーザーが数字のみ投稿（例 `10`） | 投稿時刻からN分当該時間帯のリマインドを一時停止（スヌーズ）。フラグ立てず期限切れで自動再開 |
-
-## カスタマイズ
-
-### 時間帯
-
-朝・夜の時間帯の稼働時間は GAS の Script Properties で変更可（登録手順は [SETUP.md](SETUP.md) の「2-3. Script Properties登録」参照）。コード変更不要。
-
-- `MORNING_START_HOUR` / `MORNING_END_HOUR` — 朝の時間帯（例 `10` / `11`）
-- `EVENING_START_HOUR` / `EVENING_END_HOUR` — 夜の時間帯（例 `19` / `22`）
-
-値は時（0-24）のみ。開始時は含み、終了時は含まない（`9` / `10` なら 9:00〜9:55 に投稿）。4キーすべて必須で、未設定・不正な値・開始 >= 終了の場合は実行時エラーになる。変更時は `tick` トリガーの稼働時間と整合させること。
-
-### 絵文字
-
-検知対象の絵文字は GAS の Script Properties で変更可（登録手順は [SETUP.md](SETUP.md) の「2-3. Script Properties登録」参照）。コード変更不要。
-
-- `STOP_EMOJI` — 当該時間帯の停止に使う絵文字（既定 `white_check_mark`）
-- `DAY_OFF_EMOJI` — 終日停止に使う絵文字（部分一致、既定 `heart`）
-
-カスタム絵文字も指定可。コロンなしの正式名（例 `dakoku_done`）で登録する。
-
-### リマインド文言
-
-投稿する文言は GAS の Script Properties で変更可（登録手順は [SETUP.md](SETUP.md) の「2-3. Script Properties登録」参照）。コード変更不要。
-
-- `MORNING_MESSAGE` — 朝の投稿文言（例 `【始業】打刻したことを確認したら、✅を押してね！`）
-- `EVENING_MESSAGE` — 夜の投稿文言（例 `【終業】打刻したことを確認したら、✅を押してね！`）
-
-いずれも必須。未設定の場合は実行時エラーになる。
+- [docs/setup.md](docs/setup.md) — 構築手順
+- [docs/behavior.md](docs/behavior.md) — 挙動仕様（時刻・曜日ごとの詳細な動作）
+- [docs/customize.md](docs/customize.md) — カスタマイズ（時間帯・絵文字・リマインド文言。Script Properties で変更可）
+- [docs/architecture.md](docs/architecture.md) — システム構成・設計
+- [src/code.gs](src/code.gs) — コード本体
