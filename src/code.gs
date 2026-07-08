@@ -9,14 +9,56 @@ const TIME_SLOT = {
   EVENING: 'evening',
 };
 
+const NUMBER_ONLY_PATTERN = /^\d+$/;
+
 const ACTIVE_HOURS = {
-  [TIME_SLOT.MORNING]: { startHour: 10, endHour: 11 },
-  [TIME_SLOT.EVENING]: { startHour: 19, endHour: 22 },
+  [TIME_SLOT.MORNING]: buildActiveHours('MORNING_START_HOUR', 'MORNING_END_HOUR'),
+  [TIME_SLOT.EVENING]: buildActiveHours('EVENING_START_HOUR', 'EVENING_END_HOUR'),
 };
 
-const FLAG_PREFIX = 'stopped_';
+/**
+ * Script Properties の開始時・終了時キーから時間帯設定を組み立てる。
+ * 開始 >= 終了となる組み合わせの場合は例外を投げる。
+ *
+ * @param {string} startKey - 開始時の Script Properties キー名
+ * @param {string} endKey - 終了時の Script Properties キー名
+ * @returns {{startHour: number, endHour: number}} 時間帯設定
+ */
+function buildActiveHours(startKey, endKey) {
+  const startHour = parseHourProperty(startKey);
+  const endHour = parseHourProperty(endKey);
 
-const NUMBER_ONLY_PATTERN = /^\d+$/;
+  if (startHour >= endHour) {
+    throw new Error(`invalid hours: ${startKey}=${startHour}, ${endKey}=${endHour}`);
+  }
+
+  return { startHour, endHour };
+}
+
+/**
+ * Script Properties から時（0-24）を読み取る。
+ * 未設定・不正な値（数字以外、24超え）の場合は例外を投げる。
+ *
+ * @param {string} key - Script Properties のキー名
+ * @returns {number} 時
+ */
+function parseHourProperty(key) {
+  const raw = PROPS.getProperty(key);
+
+  if (!raw) {
+    throw new Error(`missing script property: ${key}`);
+  }
+
+  const text = raw.trim();
+
+  if (!NUMBER_ONLY_PATTERN.test(text) || Number(text) > 24) {
+    throw new Error(`invalid ${key}: ${raw}`);
+  }
+
+  return Number(text);
+}
+
+const FLAG_PREFIX = 'stopped_';
 
 /**
  * トリガーから5分おきに実行されるメインロジック。

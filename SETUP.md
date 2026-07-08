@@ -7,7 +7,7 @@
 **[1] GAS 時間トリガー**
 
 - 実行間隔: 5分おき
-- 稼働時間帯: 平日 10-11時 / 19-22時（土日・祝日は内部判定でスキップ）
+- 稼働時間帯: 平日 朝・夜の2枠（Script Properties で設定、例 10-11時 / 19-22時。土日・祝日は内部判定でスキップ）
 
 **[2] GAS: `tick()`** — メインロジック
 
@@ -98,6 +98,12 @@
 | `CHANNEL_ID` | `CXXXXX` |
 | `STOP_EMOJI` | `white_check_mark` |
 | `DAY_OFF_EMOJI` | `heart` |
+| `MORNING_START_HOUR` | `10` |
+| `MORNING_END_HOUR` | `11` |
+| `EVENING_START_HOUR` | `19` |
+| `EVENING_END_HOUR` | `22` |
+
+`*_HOUR` は時（0-24）のみ指定。全キー必須で、未設定・不正な値・開始 >= 終了の場合は実行時エラーになる。
 
 ### 2-4. コード貼付
 
