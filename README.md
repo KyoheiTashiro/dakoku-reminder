@@ -13,7 +13,7 @@
 - 数字のみ投稿（例 `10`）→ 投稿時刻からN分リマインド一時停止（スヌーズ）
 - GAS + Slack API で実現
 
-構築手順・システム構成は [SETUP.md](SETUP.md)、コード本体は [src/code.gs](src/code.gs) を参照。
+構築手順は [SETUP.md](SETUP.md)、システム構成・設計は [docs/architecture.md](docs/architecture.md)、コード本体は [src/code.gs](src/code.gs) を参照。
 
 ## 使い方
 
@@ -62,3 +62,12 @@ Bot が投稿するリマインドに対して、チャンネル上の操作だ�
 - `DAY_OFF_EMOJI` — 終日停止に使う絵文字（部分一致、既定 `heart`）
 
 カスタム絵文字も指定可。コロンなしの正式名（例 `dakoku_done`）で登録する。
+
+### リマインド文言
+
+投稿する文言は GAS の Script Properties で変更可（登録手順は [SETUP.md](SETUP.md) の「2-3. Script Properties登録」参照）。コード変更不要。
+
+- `MORNING_MESSAGE` — 朝の投稿文言（例 `【始業】打刻したことを確認したら、✅を押してね！`）
+- `EVENING_MESSAGE` — 夜の投稿文言（例 `【終業】打刻したことを確認したら、✅を押してね！`）
+
+いずれも必須。未設定の場合は実行時エラーになる。

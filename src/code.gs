@@ -11,10 +11,19 @@ const TIME_SLOT = {
 
 const NUMBER_ONLY_PATTERN = /^\d+$/;
 
-const ACTIVE_HOURS = {
-  [TIME_SLOT.MORNING]: buildActiveHours('MORNING_START_HOUR', 'MORNING_END_HOUR'),
-  [TIME_SLOT.EVENING]: buildActiveHours('EVENING_START_HOUR', 'EVENING_END_HOUR'),
-};
+const HOLIDAY_CALENDAR_ID = 'ja.japanese.official#holiday@group.v.calendar.google.com';
+
+/**
+ * 時間帯ごとの稼働時間設定を Script Properties から構築して返す。
+ *
+ * @returns {{morning: {startHour: number, endHour: number}, evening: {startHour: number, endHour: number}}} 時間帯ごとの稼働時間設定
+ */
+function getActiveHours() {
+  return {
+    [TIME_SLOT.MORNING]: buildActiveHours('MORNING_START_HOUR', 'MORNING_END_HOUR'),
+    [TIME_SLOT.EVENING]: buildActiveHours('EVENING_START_HOUR', 'EVENING_END_HOUR'),
+  };
+}
 
 /**
  * Script Properties の開始時・終了時キーから時間帯設定を組み立てる。
@@ -86,9 +95,9 @@ function tick() {
 
   if (isSnoozed(timeSlot)) return;
 
-  const message = buildMessage(timeSlot);
+  const response = requestSlackApi('chat.postMessage', { channel: CHANNEL, text: buildMessage(timeSlot) });
 
-  postMessage(message);
+  if (!response.ok) console.error('post failed', response);
 }
 
 /**
@@ -131,6 +140,28 @@ function hasAllDayStopSignal(date) {
 }
 
 /**
+ * Slack Web API を呼び出し、レスポンスの JSON を返す。
+ * HTTPエラー時も例外を投げず、Slack のエラーレスポンス（ok: false）をそのまま返す。
+ * ok 判定・エラー処理は呼出側の責務（verifySetup が失敗レスポンス本体を必要とするため）。
+ *
+ * @param {string} endpoint - APIメソッド名（例 'chat.postMessage'）
+ * @param {Object} [params] - パラメータ。値は文字列化して form-encoded で送信
+ * @returns {Object} Slack APIレスポンス
+ */
+function requestSlackApi(endpoint, params = {}) {
+  const payload = Object.fromEntries(
+    Object.entries(params).map(([key, value]) => [key, String(value)])
+  );
+
+  return JSON.parse(UrlFetchApp.fetch(`https://slack.com/api/${endpoint}`, {
+    method: 'post',
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    payload,
+    muteHttpExceptions: true,
+  }).getContentText());
+}
+
+/**
  * チャンネル履歴を取得しメッセージ配列を返却。
  * API失敗時は null を返す（呼出側で投稿継続判定に利用）。
  *
@@ -139,19 +170,14 @@ function hasAllDayStopSignal(date) {
  * @returns {Array|null} メッセージ配列 or 失敗時null
  */
 function fetchChannelHistory(oldest, limit) {
-  const url = `https://slack.com/api/conversations.history?channel=${CHANNEL}&oldest=${oldest}&limit=${limit}`;
-  const res = UrlFetchApp.fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    muteHttpExceptions: true,
-  });
-  const body = JSON.parse(res.getContentText());
+  const response = requestSlackApi('conversations.history', { channel: CHANNEL, oldest, limit });
 
-  if (!body.ok) {
-    console.error('failed to fetch history: ', body);
+  if (!response.ok) {
+    console.error('failed to fetch history: ', response);
     return null;
   }
 
-  return body.messages;
+  return response.messages;
 }
 
 /**
@@ -189,7 +215,7 @@ function isNationalHoliday(date) {
 
 
   try {
-    const calendar = CalendarApp.getCalendarById('ja.japanese.official#holiday@group.v.calendar.google.com');
+    const calendar = CalendarApp.getCalendarById(HOLIDAY_CALENDAR_ID);
     const isHoliday = calendar.getEventsForDay(date).length > 0;
 
     cache.put(key, isHoliday ? '1' : '0', 21600);
@@ -208,8 +234,9 @@ function isNationalHoliday(date) {
  */
 function getTimeSlot(date) {
   const hours = date.getHours();
-  const morning = ACTIVE_HOURS[TIME_SLOT.MORNING];
-  const evening = ACTIVE_HOURS[TIME_SLOT.EVENING];
+  const activeHours = getActiveHours();
+  const morning = activeHours[TIME_SLOT.MORNING];
+  const evening = activeHours[TIME_SLOT.EVENING];
 
   switch (true) {
     case hours >= morning.startHour && hours < morning.endHour:
@@ -247,7 +274,7 @@ function hasStoppedFlag(date) {
 function hasReactionOnRecent(timeSlot) {
   const now = new Date();
   const start = new Date(now);
-  start.setHours(ACTIVE_HOURS[timeSlot].startHour, 0, 0, 0);
+  start.setHours(getActiveHours()[timeSlot].startHour, 0, 0, 0);
   const oldest = Math.floor(start.getTime() / 1000);
 
   const messages = fetchChannelHistory(oldest, 50);
@@ -274,7 +301,7 @@ function hasUserCompletionPost(date, timeSlot) {
   const start = new Date(date);
 
   if (timeSlot === TIME_SLOT.EVENING) {
-    start.setHours(ACTIVE_HOURS[TIME_SLOT.MORNING].endHour, 0, 0, 0);
+    start.setHours(getActiveHours()[TIME_SLOT.MORNING].endHour, 0, 0, 0);
   } else {
     start.setHours(0, 0, 0, 0);
   }
@@ -303,7 +330,7 @@ function hasUserCompletionPost(date, timeSlot) {
 function isSnoozed(timeSlot) {
   const now = new Date();
   const start = new Date(now);
-  start.setHours(ACTIVE_HOURS[timeSlot].startHour, 0, 0, 0);
+  start.setHours(getActiveHours()[timeSlot].startHour, 0, 0, 0);
   const oldest = Math.floor(start.getTime() / 1000);
 
   const messages = fetchChannelHistory(oldest, 50);
@@ -325,6 +352,8 @@ function isSnoozed(timeSlot) {
 
 /**
  * 時間帯に応じたリマインド文を生成。
+ * 文言は Script Properties の MORNING_MESSAGE / EVENING_MESSAGE で設定（必須）。
+ * 未設定の場合は例外を投げる。
  *
  * @param {'morning'|'evening'} timeSlot - 対象の時間帯
  * @returns {string} 投稿本文
@@ -332,30 +361,14 @@ function isSnoozed(timeSlot) {
 function buildMessage(timeSlot) {
   if (Math.random() < 0.001) return 'ワン！';
 
-  return timeSlot === TIME_SLOT.MORNING
-    ? '【始業】打刻したことを確認したら、✅を押してね！'
-    : '【終業】打刻したことを確認したら、✅を押してね！';
-}
+  const key = timeSlot === TIME_SLOT.MORNING ? 'MORNING_MESSAGE' : 'EVENING_MESSAGE';
+  const message = PROPS.getProperty(key);
 
-/**
- * Slackチャンネルへテキスト投稿。
- * 失敗時は例外を投げずconsole.errorに記録のみ。
- *
- * @param {string} text - 投稿本文
- * @returns {void}
- */
-function postMessage(text) {
-  const res = UrlFetchApp.fetch('https://slack.com/api/chat.postMessage', {
-    method: 'post',
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    contentType: 'application/json; charset=utf-8',
-    payload: JSON.stringify({ channel: CHANNEL, text }),
-    muteHttpExceptions: true,
-  });
+  if (!message) {
+    throw new Error(`missing script property: ${key}`);
+  }
 
-  const body = JSON.parse(res.getContentText());
-
-  if (!body.ok) console.error('post failed', body);
+  return message;
 }
 
 /**
@@ -372,4 +385,141 @@ function cleanupFlags() {
     .filter((property) => property.startsWith(FLAG_PREFIX))
     .filter((property) => property.split('_')[1] < today)
     .forEach((property) => PROPS.deleteProperty(property));
+}
+
+/**
+ * トリガーの初期設定を行う。
+ * 既存の `tick` / `cleanupFlags` 向けトリガーを削除してから作成し直すため、
+ * 再実行しても重複登録されない（冪等）。
+ *
+ * @returns {void}
+ */
+function setup() {
+  const handlersToReset = [tick, cleanupFlags].map((handler) => handler.name);
+  const triggersToDelete = ScriptApp.getProjectTriggers().filter((trigger) =>
+    handlersToReset.includes(trigger.getHandlerFunction())
+  );
+  triggersToDelete.forEach((trigger) => ScriptApp.deleteTrigger(trigger));
+
+  ScriptApp.newTrigger(tick.name).timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger(cleanupFlags.name).timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
+
+  console.log(`既存トリガーを${triggersToDelete.length}件削除しました`);
+  console.log(`${tick.name}（5分おき）トリガーを作成しました`);
+  console.log(`${cleanupFlags.name}（毎週日曜日AM3時）トリガーを作成しました`);
+}
+
+/**
+ * 導入時の設定ミスを一括検出する。
+ * 最初の失敗で止めず全項目を検査し、項目ごとに ✅ / ❌ 付きで console.log に列挙、
+ * 最後に総括行を出力する。
+ *
+ * @returns {void}
+ */
+function verifySetup() {
+  let failureCount = 0;
+
+  const report = (passed, message) => {
+    console.log(`${passed ? '✅' : '❌'} ${message}`);
+    if (!passed) failureCount++;
+  };
+
+  // 必須 Script Properties がすべて設定されていること
+  const requiredKeys = ['SLACK_TOKEN', 'CHANNEL_ID', 'STOP_EMOJI', 'DAY_OFF_EMOJI', 'MORNING_START_HOUR', 'MORNING_END_HOUR', 'EVENING_START_HOUR', 'EVENING_END_HOUR', 'MORNING_MESSAGE', 'EVENING_MESSAGE'];
+  requiredKeys.forEach((key) => {
+    if (PROPS.getProperty(key)) {
+      report(true, `${key}: 設定済み`);
+    } else {
+      report(false, `${key}: 未設定です。スクリプトプロパティに設定してください`);
+    }
+  });
+
+  // 稼働時間が有効であること（0-24 の数字、開始 < 終了）
+  ['MORNING', 'EVENING'].forEach((slot) => {
+    const label = `${slot}_START_HOUR/${slot}_END_HOUR`;
+    try {
+      buildActiveHours(`${slot}_START_HOUR`, `${slot}_END_HOUR`);
+      report(true, `${label}: 有効`);
+    } catch (e) {
+      report(false, `${label}: ${e.message}`);
+    }
+  });
+
+  // 絵文字名にコロン(:)が含まれていないこと
+  ['STOP_EMOJI', 'DAY_OFF_EMOJI'].forEach((key) => {
+    const value = PROPS.getProperty(key);
+    if (value && value.includes(':')) {
+      report(false, `${key}: コロン(:)が含まれています。絵文字名のみ指定してください。`);
+    } else {
+      report(true, `${key}: コロン混入なし`);
+    }
+  });
+
+  // タイムゾーンが Asia/Tokyo であること
+  const timeZone = Session.getScriptTimeZone();
+  if (timeZone === 'Asia/Tokyo') {
+    report(true, `タイムゾーン: ${timeZone}`);
+  } else {
+    report(false, `タイムゾーン: ${timeZone}（プロジェクトの設定で Asia/Tokyo に変更してください。）`);
+  }
+
+  // SLACK_TOKEN が有効であること（auth.test）
+  if (!TOKEN) {
+    report(false, 'トークン有効性: SLACK_TOKEN未設定のためスキップ');
+  } else {
+    try {
+      const response = requestSlackApi('auth.test');
+      if (!response.ok) {
+        report(false, `トークン有効性: 無効です（${response.error}）。SLACK_TOKENを確認してください`);
+      } else {
+        report(true, 'トークン有効性: 有効');
+      }
+    } catch (e) {
+      report(false, `トークン有効性: 確認に失敗しました（${e.message}）`);
+    }
+  }
+
+  // チャンネルが存在し Bot が招待済みであること（conversations.info）
+  if (!TOKEN || !CHANNEL) {
+    report(false, 'CHANNEL_ID: SLACK_TOKENまたはCHANNEL_ID未設定のためスキップ');
+  } else {
+    try {
+      const response = requestSlackApi('conversations.info', { channel: CHANNEL });
+      if (response.error === 'missing_scope') {
+        report(false, `CHANNEL_ID: Botのスコープ不足です（不足: ${response.needed}）。OAuth & Permissions で追加して再インストールしてください`);
+      } else if (!response.ok) {
+        report(false, `CHANNEL_ID: チャンネルを確認できません（${response.error}）CHANNEL_IDを確認してください`);
+      } else if (!response.channel.is_member) {
+        report(false, 'CHANNEL_ID: Botがチャンネルに未招待です。/invite で招待してください');
+      } else {
+        report(true, 'CHANNEL_ID: チャンネル確認OK（Bot招待済み）');
+      }
+    } catch (e) {
+      report(false, `CHANNEL_ID: 確認に失敗しました（${e.message}）`);
+    }
+  }
+
+  // 祝日カレンダーが参照可能であること（Calendar スコープ承認済み）
+  try {
+    if (CalendarApp.getCalendarById(HOLIDAY_CALENDAR_ID)) {
+      report(true, '祝日カレンダー: 参照可能');
+    } else {
+      report(false, '祝日カレンダー: 参照できません。Calendarスコープの承認状況を確認してください');
+    }
+  } catch (e) {
+    report(false, `祝日カレンダー: 参照に失敗しました（${e.message}）。Calendarスコープが未承認の可能性があります`);
+  }
+
+  console.log(failureCount === 0 ? '✅ すべてOK' : `❌ ${failureCount}件の問題あり`);
+}
+
+/**
+ * 動作テスト用にSlackチャンネルへ固定文言を投稿する。
+ *
+ * @returns {void}
+ */
+function testPost() {
+  const response = requestSlackApi('chat.postMessage', { channel: CHANNEL, text: 'テスト投稿' });
+
+  if (!response.ok) console.error('post failed', response);
 }

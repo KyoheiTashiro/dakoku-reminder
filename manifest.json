@@ -1,0 +1,23 @@
+{
+  "display_information": {
+    "name": "リマインド犬"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "リマインド犬",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "reactions:read",
+        "channels:history",
+        "channels:read",
+        "groups:history",
+        "groups:read"
+      ]
+    }
+  }
+}
