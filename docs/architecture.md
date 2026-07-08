@@ -1,6 +1,6 @@
 # 打刻リマインド（remind-dakoku）アーキテクチャ
 
-概要・使い方は [README.md](../README.md)、構築手順は [SETUP.md](../SETUP.md) を参照。
+概要・使い方は [README.md](../README.md)、構築手順は [setup.md](setup.md) を参照。
 
 ## システム構成
 
