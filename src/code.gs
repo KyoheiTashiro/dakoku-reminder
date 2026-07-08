@@ -64,13 +64,14 @@ function setStopFlag(date, timeSlot) {
 }
 
 /**
- * 当日0時以降の履歴に終日停止シグナル（ハート系リアクション）が存在するかを判定する。
- * リアクション名に DAY_OFF_EMOJI を含むものがあれば true。
+ * 当日0時以降の履歴に終日停止シグナル（ハート系絵文字）が存在するかを判定する。
+ * リアクション名に DAY_OFF_EMOJI を含むもの、またはユーザー（bot以外）の投稿本文に
+ * DAY_OFF_EMOJI を含むもの（例 `:heart:`）があれば true。
  * 検知時は朝・夜 両時間帯のフラグを立て、当日終日リマインドを停止させる用途。
  * API失敗時は false を返し投稿継続させる。
  *
  * @param {Date} date - 判定基準日
- * @returns {boolean} ハート系リアクション存在時、trueを返却
+ * @returns {boolean} ハート系絵文字の存在時、trueを返却
  */
 function hasAllDayStopSignal(date) {
   const start = new Date(date);
@@ -80,9 +81,11 @@ function hasAllDayStopSignal(date) {
   const messages = fetchChannelHistory(oldest, 200);
   if (!messages) return false;
 
-  return messages
-    .flatMap((message) => message.reactions ?? [])
-    .some((reaction) => reaction.name.includes(DAY_OFF_EMOJI));
+  return messages.some((message) =>
+    (message.reactions ?? []).some((reaction) => reaction.name.includes(DAY_OFF_EMOJI)) ||
+    (!message.bot_id && message.subtype !== 'bot_message' &&
+      (message.text ?? '').includes(DAY_OFF_EMOJI))
+  );
 }
 
 /**
